@@ -82,8 +82,18 @@ class ExploreScene extends Phaser.Scene {
             maxHp: 100,
             mp: 50,
             maxMp: 50,
-            attack: 20,
-            defense: 10
+            baseAttack: 15,
+            baseDefense: 7,
+            equipment: {
+                weapon: { name: 'Basic Sword', value: 5, type: 'weapon' },
+                armor: { name: 'Basic Armor', value: 3, type: 'armor' }
+            },
+            inventory: [
+                { name: 'Basic Sword', value: 5, type: 'weapon' },
+                { name: 'Iron Sword', value: 10, type: 'weapon' },
+                { name: 'Basic Armor', value: 3, type: 'armor' },
+                { name: 'Iron Armor', value: 6, type: 'armor' }
+            ]
         };
 
         // 1. Generate Maze Data
@@ -172,7 +182,8 @@ class ExploreScene extends Phaser.Scene {
             up: Phaser.Input.Keyboard.KeyCodes.W,
             down: Phaser.Input.Keyboard.KeyCodes.S,
             left: Phaser.Input.Keyboard.KeyCodes.A,
-            right: Phaser.Input.Keyboard.KeyCodes.D
+            right: Phaser.Input.Keyboard.KeyCodes.D,
+            inventory: Phaser.Input.Keyboard.KeyCodes.I
         });
 
         // Track previous position for battle calculation
@@ -243,7 +254,13 @@ class ExploreScene extends Phaser.Scene {
         // Normalize and scale velocity so diagonal movement isn't faster
         body.velocity.normalize().scale(speed);
 
+        // Inventory Toggle
+        if (Phaser.Input.Keyboard.JustDown(this.wasd.inventory)) {
+            this.scene.pause();
+            this.scene.launch('InventoryScene', { playerStats: this.playerStats });
+        }
     }
+
 
     updateStatsDisplay() {
         this.statsText.setText(`HP: ${this.playerStats.hp}/${this.playerStats.maxHp}  MP: ${this.playerStats.mp}/${this.playerStats.maxMp}`);
@@ -359,7 +376,14 @@ class BattleScene extends Phaser.Scene {
 
     create(data) {
         // Fallback stats to prevent crash if data is missing
-        this.playerStats = data && data.playerStats ? data.playerStats : { hp: 100, maxHp: 100, mp: 50, maxMp: 50, attack: 20, defense: 10 };
+        this.playerStats = data && data.playerStats ? data.playerStats : {
+            hp: 100, maxHp: 100, mp: 50, maxMp: 50,
+            baseAttack: 15, baseDefense: 7,
+            equipment: {
+                weapon: { name: 'Basic Sword', value: 5 },
+                armor: { name: 'Basic Armor', value: 3 }
+            }
+        };
         this.enemyStats = data && data.enemyStats ? data.enemyStats : { name: 'Unknown', hp: 50, maxHp: 50, attack: 10, defense: 0, color: 0xffffff };
 
         // Background
@@ -377,7 +401,17 @@ class BattleScene extends Phaser.Scene {
         this.add.text(50, 400, 'Player', { fontSize: '32px', fill: '#00ff00' });
         this.playerHpText = this.add.text(50, 440, `HP: ${this.playerStats.hp}/${this.playerStats.maxHp}`, { fontSize: '24px', fill: '#fff' });
         this.playerMpText = this.add.text(50, 470, `MP: ${this.playerStats.mp}/${this.playerStats.maxMp}`, { fontSize: '24px', fill: '#fff' });
-        this.playerStatsText = this.add.text(50, 500, `ATK: ${this.playerStats.attack}  DEF: ${this.playerStats.defense}`, { fontSize: '18px', fill: '#aaaaaa' });
+
+        const totalAttack = this.playerStats.baseAttack + (this.playerStats.equipment ? this.playerStats.equipment.weapon.value : 0);
+        const totalDefense = this.playerStats.baseDefense + (this.playerStats.equipment ? this.playerStats.equipment.armor.value : 0);
+
+        // Detailed Stats Display
+        this.playerStatsText = this.add.text(50, 500, '', { fontSize: '16px', fill: '#aaaaaa' });
+        this.updateStatsText();
+
+        // Equipment UI
+        this.add.text(50, 550, `Wpn: ${this.playerStats.equipment.weapon.name} (+${this.playerStats.equipment.weapon.value})`, { fontSize: '16px', fill: '#888' });
+        this.add.text(50, 570, `Arm: ${this.playerStats.equipment.armor.name} (+${this.playerStats.equipment.armor.value})`, { fontSize: '16px', fill: '#888' });
 
         // Action Menu
         this.add.text(400, 400, 'Actions:', { fontSize: '24px', fill: '#aaa' });
@@ -425,8 +459,9 @@ class BattleScene extends Phaser.Scene {
     playerAttack() {
         if (!this.isPlayerTurn || this.gameOver) return;
 
-        // Damage = Player Atk - Enemy Def
-        const damage = Math.max(0, this.playerStats.attack - this.enemyStats.defense);
+        // Damage = (Player Base Atk + Weapon) - Enemy Def
+        const totalAttack = this.playerStats.baseAttack + (this.playerStats.equipment ? this.playerStats.equipment.weapon.value : 0);
+        const damage = Math.max(0, totalAttack - this.enemyStats.defense);
         this.enemyStats.hp -= damage;
         this.updateUI();
         this.showMessage(`You attacked for ${damage} damage!`);
@@ -462,8 +497,9 @@ class BattleScene extends Phaser.Scene {
     enemyTurn() {
         if (this.gameOver) return;
 
-        // Enemy Attack
-        const damage = Math.max(0, this.enemyStats.attack - this.playerStats.defense);
+        // Enemy Attack vs (Player Base Def + Armor)
+        const totalDefense = this.playerStats.baseDefense + (this.playerStats.equipment ? this.playerStats.equipment.armor.value : 0);
+        const damage = Math.max(0, this.enemyStats.attack - totalDefense);
         this.playerStats.hp -= damage;
         this.updateUI();
         this.showMessage(`${this.enemyStats.name} attacked you for ${damage} damage!`);
@@ -509,11 +545,88 @@ class BattleScene extends Phaser.Scene {
 
         this.playerHpText.setText(`HP: ${this.playerStats.hp}/${this.playerStats.maxHp}`);
         this.playerMpText.setText(`MP: ${this.playerStats.mp}/${this.playerStats.maxMp}`);
-        this.playerStatsText.setText(`ATK: ${this.playerStats.attack}  DEF: ${this.playerStats.defense}`);
+
+        this.updateStatsText();
+    }
+
+    updateStatsText() {
+        const baseAtk = this.playerStats.baseAttack;
+        const wpnVal = this.playerStats.equipment ? this.playerStats.equipment.weapon.value : 0;
+        const totalAtk = baseAtk + wpnVal;
+
+        const baseDef = this.playerStats.baseDefense;
+        const armVal = this.playerStats.equipment ? this.playerStats.equipment.armor.value : 0;
+        const totalDef = baseDef + armVal;
+
+        this.playerStatsText.setText(
+            `ATK: ${baseAtk} + ${wpnVal} = ${totalAtk}\n` +
+            `DEF: ${baseDef} + ${armVal} = ${totalDef}`
+        );
     }
 
     showMessage(msg) {
         this.messageLog.setText(msg);
+    }
+}
+
+class InventoryScene extends Phaser.Scene {
+    constructor() {
+        super('InventoryScene');
+    }
+
+    create(data) {
+        this.playerStats = data.playerStats;
+
+        // Background
+        this.add.rectangle(400, 300, 600, 500, 0x000000, 0.9).setStrokeStyle(2, 0xffffff);
+        this.add.text(400, 80, 'Inventory', { fontSize: '32px', fill: '#fff' }).setOrigin(0.5);
+        this.add.text(400, 520, 'Press I to Close', { fontSize: '16px', fill: '#aaa' }).setOrigin(0.5);
+
+        // Current Equipment
+        this.add.text(150, 130, 'Equipped:', { fontSize: '24px', fill: '#ffff00' });
+        this.wpnText = this.add.text(150, 160, `Weapon: ${this.playerStats.equipment.weapon.name} (+${this.playerStats.equipment.weapon.value})`, { fontSize: '18px', fill: '#fff' });
+        this.armText = this.add.text(150, 190, `Armor: ${this.playerStats.equipment.armor.name} (+${this.playerStats.equipment.armor.value})`, { fontSize: '18px', fill: '#fff' });
+
+        // Inventory List
+        this.add.text(150, 240, 'Items (Click to Equip):', { fontSize: '24px', fill: '#ffff00' });
+
+        this.renderInventoryList();
+
+        // Input to close
+        this.input.keyboard.on('keydown-I', () => {
+            this.scene.resume('ExploreScene');
+            this.scene.stop();
+        });
+    }
+
+    renderInventoryList() {
+        if (this.listContainer) this.listContainer.destroy();
+        this.listContainer = this.add.container(150, 280);
+
+        this.playerStats.inventory.forEach((item, index) => {
+            const y = index * 30;
+            const text = this.add.text(0, y, `${item.name} (+${item.value} ${item.type === 'weapon' ? 'ATK' : 'DEF'})`, {
+                fontSize: '18px',
+                fill: '#fff',
+                backgroundColor: '#333',
+                padding: { x: 5, y: 2 }
+            })
+                .setInteractive({ useHandCursor: true })
+                .on('pointerdown', () => this.equipItem(item));
+
+            this.listContainer.add(text);
+        });
+    }
+
+    equipItem(item) {
+        if (item.type === 'weapon') {
+            this.playerStats.equipment.weapon = item;
+            this.wpnText.setText(`Weapon: ${item.name} (+${item.value})`);
+        } else if (item.type === 'armor') {
+            this.playerStats.equipment.armor = item;
+            this.armText.setText(`Armor: ${item.name} (+${item.value})`);
+        }
+        // Re-render list (optional if we wanted to highlight equipped item)
     }
 }
 
@@ -531,7 +644,7 @@ const config = {
             debug: false
         }
     },
-    scene: [BootScene, ExploreScene, BattleScene]
+    scene: [BootScene, ExploreScene, BattleScene, InventoryScene]
 };
 
 // Initialize Game
