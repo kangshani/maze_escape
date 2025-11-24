@@ -81,6 +81,7 @@ class ExploreScene extends Phaser.Scene {
     create(data) {
         this.level = data.level || 1;
         this.isBossDefeated = false;
+        this.occupiedTiles = new Set(); // Reset occupied tiles for new level
 
         // Player Stats (Pass from previous level or init)
         this.playerStats = data.playerStats || {
@@ -145,7 +146,6 @@ class ExploreScene extends Phaser.Scene {
         this.player.setCollideWorldBounds(true);
 
         // Track occupied tiles to prevent overlap
-        this.occupiedTiles = new Set();
         this.occupiedTiles.add(`${startX},${startY}`);
 
         // 4. Monsters
