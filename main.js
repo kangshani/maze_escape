@@ -144,19 +144,27 @@ class ExploreScene extends Phaser.Scene {
         this.player.body.setSize(TILE_SIZE * 0.6, TILE_SIZE * 0.6);
         this.player.setCollideWorldBounds(true);
 
+        // Track occupied tiles to prevent overlap
+        this.occupiedTiles = new Set();
+        this.occupiedTiles.add(`${startX},${startY}`);
+
         // 4. Monsters
         this.monsters = this.physics.add.group();
         let monsterCount = 0;
-        while (monsterCount < 5) {
+        let attempts = 0;
+        while (monsterCount < 5 && attempts < 100) {
+            attempts++;
             const mx = Phaser.Math.Between(1, COLS - 2);
             const my = Phaser.Math.Between(1, ROWS - 2);
+            const key = `${mx},${my}`;
 
-            if (this.maze[my][mx] === 0 && (mx !== startX || my !== startY)) {
+            if (this.maze[my][mx] === 0 && !this.occupiedTiles.has(key)) {
                 this.monsters.create(
                     mx * TILE_SIZE + TILE_SIZE / 2,
                     my * TILE_SIZE + TILE_SIZE / 2,
                     'monster'
                 );
+                this.occupiedTiles.add(key);
                 monsterCount++;
             }
         }
@@ -164,15 +172,20 @@ class ExploreScene extends Phaser.Scene {
         // 4b. Boss
         this.boss = this.physics.add.sprite(-100, -100, 'boss'); // Init off-screen
         let bossPlaced = false;
-        while (!bossPlaced) {
+        attempts = 0;
+        while (!bossPlaced && attempts < 100) {
+            attempts++;
             const bx = Phaser.Math.Between(1, COLS - 2);
             const by = Phaser.Math.Between(1, ROWS - 2);
+            const key = `${bx},${by}`;
+
             // Ensure empty floor and far enough from start (optional, but good)
-            if (this.maze[by][bx] === 0 && (bx > 5 || by > 5)) {
+            if (this.maze[by][bx] === 0 && (bx > 5 || by > 5) && !this.occupiedTiles.has(key)) {
                 this.boss.setPosition(
                     bx * TILE_SIZE + TILE_SIZE / 2,
                     by * TILE_SIZE + TILE_SIZE / 2
                 );
+                this.occupiedTiles.add(key);
                 bossPlaced = true;
             }
         }
@@ -180,16 +193,20 @@ class ExploreScene extends Phaser.Scene {
         // 4c. Chests
         this.chests = this.physics.add.group();
         let chestCount = 0;
-        while (chestCount < 3) {
+        attempts = 0;
+        while (chestCount < 3 && attempts < 100) {
+            attempts++;
             const cx = Phaser.Math.Between(1, COLS - 2);
             const cy = Phaser.Math.Between(1, ROWS - 2);
+            const key = `${cx},${cy}`;
 
-            if (this.maze[cy][cx] === 0 && (cx !== startX || cy !== startY)) {
+            if (this.maze[cy][cx] === 0 && !this.occupiedTiles.has(key)) {
                 this.chests.create(
                     cx * TILE_SIZE + TILE_SIZE / 2,
                     cy * TILE_SIZE + TILE_SIZE / 2,
                     'chest'
                 );
+                this.occupiedTiles.add(key);
                 chestCount++;
             }
         }
@@ -457,6 +474,26 @@ class ExploreScene extends Phaser.Scene {
                 stack.push({ x: chosen.nx, y: chosen.ny });
             } else {
                 stack.pop();
+            }
+        }
+
+        // Create multiple paths by removing random walls
+        // We iterate through the maze and remove ~10% of remaining internal walls
+        for (let y = 1; y < height - 1; y++) {
+            for (let x = 1; x < width - 1; x++) {
+                if (maze[y][x] === 1) {
+                    // Check if removing this wall connects two floor tiles
+                    // Simple check: if it has floor neighbors on opposite sides
+                    let floorNeighbors = 0;
+                    if (maze[y - 1][x] === 0) floorNeighbors++;
+                    if (maze[y + 1][x] === 0) floorNeighbors++;
+                    if (maze[y][x - 1] === 0) floorNeighbors++;
+                    if (maze[y][x + 1] === 0) floorNeighbors++;
+
+                    if (floorNeighbors >= 2 && Math.random() < 0.1) {
+                        maze[y][x] = 0;
+                    }
+                }
             }
         }
 
